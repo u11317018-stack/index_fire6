@@ -460,41 +460,70 @@
 
         // 📷 真正啟動手機相機（手機權限強化版）
         function openScanner() {
-            document.getElementById('scannerModal').style.display = 'flex';
-            
-            if (!html5QrCode) {
-                html5QrCode = new Html5QrCode("reader");
-            }
-
-            // 優化設定：提高辨識率，並強制要求後鏡頭
-            const config = { 
-                fps: 15,                 // 提高每秒掃描次數到 15 次
-                qrbox: function(viewfinderWidth, viewfinderHeight) {
-                    // 自動適應手機螢幕大小的掃描框
-                    const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                    const edgeSize = Math.floor(minEdge * 0.7);
-                    return { width: edgeSize, height: edgeSize };
+            // 🔴 第一步：先請求相機權限（不開 modal）
+            navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: { ideal: "environment" },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
                 },
-                aspectRatio: 1.0         // 強制正方形視窗，更好對焦
-            };
+                audio: false
+            })
+            .then((stream) => {
+                // ✅ 權限已允許，正式開啟掃描 modal
+                console.log("✅ 相機權限已獲得");
+                
+                // 停止流以便 Html5QrCode 重新使用
+                stream.getTracks().forEach(track => track.stop());
+                
+                // 現在才打開 modal
+                document.getElementById('scannerModal').style.display = 'flex';
+                
+                // 初始化相機元件
+                if (!html5QrCode) {
+                    html5QrCode = new Html5QrCode("reader");
+                }
 
-            // 🚀 核心改動：加入極致權限請求，告訴手機我們「絕對要後鏡頭」
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-                .then((stream) => {
-                    // 使用者同意給權限後，再正式開刷
-                    html5QrCode.start(
-                        { facingMode: "environment" }, 
-                        config, 
-                        onScanSuccess, 
-                        onScanFailure
-                    ).catch(err => {
-                        console.error("Qrcode start error", err);
-                    });
-                })
-                .catch(err => {
-                    alert("⚠️ 鏡頭啟動失敗！\n1. 請確認是否有點擊『允許』相機權限。\n2. 如果是用 LINE 點開，請點選右下角/右上角選單，改用『Safari』或『Chrome』瀏覽器打開喔！");
+                const config = { 
+                    fps: 15,
+                    qrbox: function(viewfinderWidth, viewfinderHeight) {
+                        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                        const edgeSize = Math.floor(minEdge * 0.7);
+                        return { width: edgeSize, height: edgeSize };
+                    },
+                    aspectRatio: 1.0
+                };
+
+                html5QrCode.start(
+                    { facingMode: "environment" }, 
+                    config, 
+                    onScanSuccess, 
+                    onScanFailure
+                ).catch(err => {
+                    console.error("QR Code 啟動失敗:", err);
+                    alert("❌ QR Code 掃描啟動失敗：" + err);
                     closeScanner();
                 });
+            })
+            .catch(err => {
+                // ❌ 權限被拒絕或其他錯誤
+                console.error("相機權限錯誤:", err);
+                
+                let errorMsg = "⚠️ 相機啟動失敗！\n\n";
+                if (err.name === 'NotAllowedError') {
+                    errorMsg += "❌ 你拒絕了相機權限。\n請進入瀏覽器設定，允許此網站使用相機。";
+                } else if (err.name === 'NotFoundError') {
+                    errorMsg += "❌ 找不到相機。\n請確認你的手機有相機功能。";
+                } else if (err.name === 'NotReadableError') {
+                    errorMsg += "❌ 相機被其他應用佔用。\n請關閉其他使用相機的應用，再試一次。";
+                } else {
+                    errorMsg += "❌ " + err.message;
+                }
+                
+                errorMsg += "\n\n💡 如果是用 LINE 打開，請改用 Safari 或 Chrome！";
+                
+                alert(errorMsg);
+            });
         }
 
         // 🛑 關閉並釋放相機鏡頭
@@ -514,7 +543,6 @@
             let matchedIndex = -1;
 
             // 💡 判斷掃描到的文字是什麼，來決定蓋哪一個章
-            // 你去現場貼的 QR Code，裡面內容請直接設定成對應的英文字母即可
             if (decodedText === "ganai_pic_A") {
                 matchedIndex = 0; // 廣照宮
             } else if (decodedText === "ganai_pic_B") {
@@ -539,7 +567,7 @@
             }
         }
 
-        // 掃描過程中沒對準、失焦時的訊號（通常不作處理以免瘋狂彈窗）
+        // 掃描過程中沒對準、失焦時的訊號
         function onScanFailure(error) {
             // console.warn(`掃描中: ${error}`);
         }
